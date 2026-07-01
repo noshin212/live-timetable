@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ライブ・タイムテーブル作成</title>
+  
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  
+  <style>
+    body { font-family: sans-serif; max-width: 650px; margin: auto; padding: 0 20px 30px; background: #fff; }
+    
+    .sticky-header-area {
+      position: sticky; top: 0; background-color: #fff; z-index: 100;
+      padding-top: 20px; padding-bottom: 15px; border-bottom: 2px solid #ddd; margin-bottom: 20px;
+    }
+
+    .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px; }
+    h2 { margin: 0; }
+    
+    .controls { background: #f4f4f4; padding: 15px; border-radius: 8px; }
+    
+    .item { padding: 10px; margin: 5px 0; background: #fff; border: 1px solid #ddd; border-left: 5px solid #3498db; cursor: grab; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; }
+    .item.setup { border-left-color: #f1c40f; background: #fffcf0; }
+    .item.break { border-left-color: #e74c3c; background: #fff0f0; }
+    .item.selected { border-color: #2ecc71; box-shadow: 0 0 8px rgba(46, 204, 113, 0.5); transform: scale(1.02); z-index: 10; position: relative; }
+    
+    /* 画像出力時に不要なボタンを消すためのクラス */
+    .hide-on-export { display: inline-block; }
+    .exporting .hide-on-export { display: none !important; }
+    
+    button { cursor: pointer; padding: 5px 10px; margin-left: 5px; }
+    .item-main { flex-grow: 1; display: flex; align-items: center; margin-left: 15px; }
+    .title { font-weight: bold; margin-right: 10px; min-width: 150px; }
+    .duration-edit { width: 50px; padding: 3px; text-align: center; border: 1px solid #ccc; border-radius: 4px; }
+    .time-display { font-family: monospace; font-size: 1.1em; min-width: 110px; }
+    
+    .btn-group { display: flex; gap: 5px; flex-wrap: wrap; }
+    .btn { border: none; border-radius: 4px; padding: 8px 12px; font-weight: bold; color: white; }
+    .share-btn { background: #3498db; }
+    .img-btn { background: #2ecc71; }
+    .reset-btn { background: #e74c3c; }
+    
+    /* キャプチャ用のラッパー領域 */
+    #capture-area { padding-bottom: 20px; background: #fff; }
+  </style>
+</head>
+<body>
+
+  <div class="sticky-header-area">
+    <div class="header-flex">
+      <h2>ライブ進行表</h2>
+      <div class="btn-group">
+        <button class="btn img-btn" onclick="downloadAsImage()">📷 画像として保存</button>
+        <button class="btn share-btn" onclick="generateShareLink()">🔗 共有URLを発行</button>
+        <button class="btn reset-btn" onclick="clearData()">リセット</button>
+      </div>
+    </div>
+    
+    <div class="controls">
+      <label>開始時間: <input type="time" id="startTime" value="13:00" onchange="recalculateTimes()"></label>
+      <hr style="border-top: 1px solid #ddd; border-bottom: none; margin: 10px 0;">
+      <input type="text" id="bandName" placeholder="バンド名">
+      <input type="number" id="duration" placeholder="分数" value="20" style="width: 60px;"> 分
+      <br><br>
+      <button onclick="addItemFromInput('band')">🎸 バンド</button>
+      <button onclick="addItemFromInput('setup')">🔌 転換(10分)</button>
+      <button onclick="addItemFromInput('break')">☕ 休憩</button>
+    </div>
+  </div>
+
+  <div id="capture-area">
+    <div id="timetable"></div>
+  </div>
+
+  <script>
+    const timetable = document.getElementById('timetable');
+    let selectedItem = null;
+
+    // ドラッグ＆ドロップ
+    new Sortable(timetable, {
+      animation: 150,
+      onEnd: recalculateTimes
+    });
+
+    // 項目追加
+    function addItemFromInput(type) {
+      let name = type === 'setup' ? '転換（セッティング）' : type === 'break' ? '休憩' : (document.getElementById('bandName').value || '名称未設定');
+      let duration = type === 'setup' ? 10 : type === 'break' ? (parseInt(document.getElementById('duration').value) || 15) : (parseInt(document.getElementById('duration').value) || 20);
+      createDOMItem(type, name, duration);
+      document.getElementById('bandName').value = ''; 
+      recalculateTimes();
+    }
+
+    // DOM要素作成
+    function createDOMItem(type, name, duration) {
+      const div = document.createElement('div');
+      div.className = `item ${type}`;
+      div.dataset.duration = duration;
+      
+      div.innerHTML = `
+        <span class="time-display">--:--</span>
+        <div class="item-main">
+          <span class="title">${name}</span>
+          <input type="number" class="duration-edit hide-on-export" value="${duration}" min="1" onchange="updateDuration(this)">
+          <span class="hide-on-export">分</span>
+        </div>
+        <div class="hide-on-export">
+          <button class="swap-btn" onclick="toggleSelect(this, this.closest('.item'))">⇄</button>
+          <button onclick="this.closest('.item').remove(); recalculateTimes()">✖</button>
+        </div>
+      `;
+      timetable.appendChild(div);
+    }
+
+    // 時間変更
+    function updateDuration(inputElement) {
+      const itemDiv = inputElement.closest('.item');
+      let newDuration = parseInt(inputElement.value);
+      if (isNaN(newDuration) || newDuration < 0) newDuration = 0;
+      itemDiv.dataset.duration = newDuration;
+      recalculateTimes();
+    }
+
+    // 選択と交換
+    function toggleSelect(btn, itemDiv) {
+      if (selectedItem === itemDiv) {
+        itemDiv.classList.remove('selected');
+        selectedItem = null;
+      } else if (selectedItem === null) {
+        itemDiv.classList.add('selected');
+        selectedItem = itemDiv;
+      } else {
+        swapElements(selectedItem, itemDiv);
+        selectedItem.classList.remove('selected');
+        selectedItem = null;
+        recalculateTimes();
+      }
+    }
+
+    function swapElements(el1, el2) {
+      const parent = el1.parentNode;
+      const sibling1 = el1.nextSibling === el2 ? el1 : el1.nextSibling;
+      el2.parentNode.insertBefore(el1, el2);
+      parent.insertBefore(el2, sibling1);
+    }
+
+    // 時間の再計算とローカル保存
+    function recalculateTimes() {
+      const startTimeStr = document.getElementById('startTime').value;
+      if (!startTimeStr) return;
+
+      let [hours, minutes] = startTimeStr.split(':').map(Number);
+      let currentTime = new Date(2000, 0, 1, hours, minutes);
+      const items = document.querySelectorAll('.item');
+      const dataToSave = [];
+
+      items.forEach(item => {
+        const start = currentTime.toTimeString().slice(0, 5);
+        const duration = parseInt(item.dataset.duration) || 0;
+        currentTime.setMinutes(currentTime.getMinutes() + duration);
+        const end = currentTime.toTimeString().slice(0, 5);
+        item.querySelector('.time-display').innerText = `${start} 〜 ${end}`;
+
+        let itemType = item.classList.contains('setup') ? 'setup' : item.classList.contains('break') ? 'break' : 'band';
+        dataToSave.push({ type: itemType, name: item.querySelector('.title').innerText, duration: duration });
+      });
+
+      localStorage.setItem('liveTimetableData', JSON.stringify({ startTime: startTimeStr, items: dataToSave }));
+    }
+
+    // ★Pythonサーバー連携: 短縮URL発行
+    async function generateShareLink() {
+      const savedData = localStorage.getItem('liveTimetableData');
+      if (!savedData || JSON.parse(savedData).items.length === 0) {
+        alert('タイムテーブルが空です。'); return;
+      }
+
+      const appData = JSON.parse(savedData);
+      
+      try {
+        const response = await fetch('/save', {
+          method: 'POST',
+          headers: { 'Content-Type': "application/json" },
+          body: JSON.stringify({ data: appData })
+        });
+        const result = await response.json();
+
+        const baseUrl = window.location.href.split('?')[0];
+        const shareUrl = baseUrl + '?id=' + result.id;
+
+        window.prompt('【スタッフ共有用】以下の短いURLをLINEで共有してください：', shareUrl);
+      } catch (e) {
+        alert('サーバーとの通信に失敗しました。Pythonサーバーが起動しているか確認してください。');
+        console.error(e);
+      }
+    }
+
+    // 画像として保存
+    function downloadAsImage() {
+      const captureArea = document.getElementById('capture-area');
+      captureArea.classList.add('exporting');
+      
+      html2canvas(captureArea, {
+        backgroundColor: '#ffffff',
+        scale: 2
+      }).then(canvas => {
+        captureArea.classList.remove('exporting');
+        const link = document.createElement('a');
+        link.download = 'timetable.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      });
+    }
+
+    // ★Pythonサーバー連携: データ読み込み
+    async function loadData() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const shortId = urlParams.get('id');
+      
+      let targetData = null;
+      
+      if (shortId) {
+        try {
+          const response = await fetch(`/load/${shortId}`);
+          const result = await response.json();
+
+          if (result.success) {
+            targetData = result.data;
+            alert('共有されたタイムテーブル（ID: ' + shortId + '）を読み込みました！');
+          } else {
+            alert('データが見つかりませんでした。');
+          }
+        } catch (e) {
+          console.error('サーバーからの読み込みに失敗:', e);
+        }
+      }
+      
+      if (!targetData) {
+        const localData = localStorage.getItem('liveTimetableData');
+        if (localData) targetData = JSON.parse(localData);
+      }
+      
+      if (targetData) {
+        document.getElementById('startTime').value = targetData.startTime || '13:00';
+        timetable.innerHTML = ''; 
+        targetData.items.forEach(data => createDOMItem(data.type, data.name, data.duration));
+        recalculateTimes();
+      }
+    }
+
+    // データリセット
+    function clearData() {
+      if (confirm('初期化しますか？')) {
+        localStorage.removeItem('liveTimetableData');
+        if (window.location.search) { window.location.href = window.location.href.split('?')[0]; } 
+        else { timetable.innerHTML = ''; document.getElementById('startTime').value = '13:00'; }
+      }
+    }
+
+    // 起動時に読み込み実行
+    loadData();
+  </script>
+</body>
+</html>
