@@ -56,6 +56,8 @@
         <button class="btn reset-btn" onclick="window.clearData()">リセット</button>
       </div>
     </div>
+
+    <div id="status" style="text-align: center; font-size: 0.9rem; font-weight: bold; margin-bottom: 15px; color: #666;">接続状態を確認中...</div>
     
     <div class="controls">
       <label>開始時間: <input type="time" id="startTime" value="13:00"></label>
@@ -94,6 +96,19 @@
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${wsProtocol}//${window.location.host}/ws/${roomId}`;
     const provider = new WebsocketProvider(wsUrl, roomId, ydoc);
+
+    provider.on('status', event => {
+      const statusEl = document.getElementById('status');
+      if (statusEl) {
+        if (event.status === 'connected'){
+          statusEl.textContent = `🟢 リアルタイム同期中 (ルームID: ${roomId})`;
+          statusEl.style.color = '#2ecc71';
+        } else{
+          statusEl.textContent = '🔴 接続が切れました。再接続中...';
+          statusEl.style.color = '#e74c3c';
+        }
+      }
+    })
 
     // DOM要素の取得
     const timetableElement = document.getElementById('timetable');
