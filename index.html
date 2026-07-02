@@ -5,18 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>リアルタイム・タイムテーブル</title>
   <style>
-    /* 基本的なデザイン（必要に応じてカスタマイズしてください） */
     body { font-family: sans-serif; background-color: #f4f4f9; color: #333; margin: 0; padding: 20px; }
     .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     h1 { font-size: 1.5rem; text-align: center; border-bottom: 2px solid #ddd; padding-bottom: 10px; }
     
-    /* 入力フォーム部分 */
-    .form-group { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
-    input, select, button { padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
+    /* 入力フォームとボタン部分 */
+    .input-group { display: flex; gap: 10px; margin-bottom: 10px; }
+    input { padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
     input[type="text"] { flex: 2; }
     input[type="number"] { flex: 1; min-width: 60px; }
-    button { background-color: #007bff; color: white; border: none; cursor: pointer; flex: 1; }
-    button:hover { background-color: #0056b3; }
+    
+    .button-group { display: flex; gap: 10px; margin-bottom: 20px; }
+    .button-group button { 
+      flex: 1; padding: 10px; border: none; border-radius: 4px; font-size: 1rem; 
+      font-weight: bold; cursor: pointer; color: white;
+    }
+    /* ボタンの色分け */
+    .btn-band { background-color: #007bff; }
+    .btn-band:hover { background-color: #0056b3; }
+    .btn-setup { background-color: #ff9800; }
+    .btn-setup:hover { background-color: #e68a00; }
+    .btn-break { background-color: #28a745; }
+    .btn-break:hover { background-color: #218838; }
 
     /* タイムテーブルのリスト部分 */
     ul { list-style: none; padding: 0; margin: 0; }
@@ -26,16 +36,17 @@
       border-left: 5px solid #007bff; cursor: grab;
       box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-    li.type-setup { border-left-color: #ff9800; background: #fff5e6; } /* 転換用の色 */
+    /* リストの色分け */
+    li.type-setup { border-left-color: #ff9800; background: #fff5e6; }
+    li.type-break { border-left-color: #28a745; background: #e8f5e9; }
     li:active { cursor: grabbing; }
     .drag-over { border: 2px dashed #007bff; opacity: 0.5; }
     
     .time-info { font-weight: bold; color: #555; width: 60px; }
     .band-name { flex: 1; font-size: 1.1rem; margin-left: 10px; }
-    .delete-btn { background: #dc3545; padding: 5px 10px; font-size: 0.8rem; }
+    .delete-btn { background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; font-size: 0.8rem; cursor: pointer;}
     .delete-btn:hover { background: #b02a37; }
     
-    /* 接続ステータス */
     #status { text-align: center; font-size: 0.9rem; color: #666; margin-bottom: 15px; }
   </style>
 </head>
@@ -45,44 +56,38 @@
     <h1>ライブ進行タイムテーブル</h1>
     <div id="status">サーバーに接続中...</div>
 
-    <!-- アイテム追加フォーム -->
-    <div class="form-group">
-      <select id="inputType">
-        <option value="band">バンド</option>
-        <option value="setup">転換/MC</option>
-      </select>
-      <input type="text" id="inputName" placeholder="例: Chevon コピー" required>
+    <!-- テキスト＆時間入力 -->
+    <div class="input-group">
+      <input type="text" id="inputName" placeholder="名前 (例: Chevon コピー)">
       <input type="number" id="inputDuration" placeholder="分数" value="20" required>
-      <button id="addBtn">追加</button>
     </div>
 
-    <!-- タイムテーブル表示用リスト -->
-    <ul id="timetableList">
-      <!-- ここにJavaScriptでリストが自動生成されます -->
-    </ul>
+    <!-- 3つの追加ボタン -->
+    <div class="button-group">
+      <button class="btn-band" id="addBandBtn">バンド追加</button>
+      <button class="btn-setup" id="addSetupBtn">転換追加</button>
+      <button class="btn-break" id="addBreakBtn">休憩追加</button>
+    </div>
+
+    <ul id="timetableList"></ul>
   </div>
 
-  <!-- Yjs と y-websocket の読み込み -->
   <script type="module">
     import * as Y from 'https://esm.sh/yjs@13';
     import { WebsocketProvider } from 'https://esm.sh/y-websocket@1.5';
 
-    // ==========================================
     // 1. 初期設定とサーバー接続
-    // ==========================================
     const urlParams = new URLSearchParams(window.location.search);
-    const roomId = urlParams.get('id') || 'default-room'; // URLに ?id=xxx があればそれを使う
+    const roomId = urlParams.get('id') || 'default-room';
     
     const ydoc = new Y.Doc();
-    const yTimetable = ydoc.getArray('timetable'); // 共有する配列データ
+    const yTimetable = ydoc.getArray('timetable');
 
-    // HTTPS環境なら 'wss://'、ローカルテストなら 'ws://' に自動変換
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${wsProtocol}//${window.location.host}/ws/${roomId}`;
     
     const provider = new WebsocketProvider(wsUrl, roomId, ydoc);
 
-    // 接続ステータスの表示
     provider.on('status', event => {
       const statusEl = document.getElementById('status');
       if (event.status === 'connected') {
@@ -94,40 +99,33 @@
       }
     });
 
-    // ==========================================
     // 2. 画面の自動描画 (Observe)
-    // ==========================================
     const listElement = document.getElementById('timetableList');
 
-    // yTimetableの中身が変更されたら、自動でこの関数が実行される
     yTimetable.observe(() => {
       renderList();
     });
 
-    // HTMLを生成して表示する関数
     function renderList() {
-      listElement.innerHTML = ''; // 一旦リストを空にする
-      const data = yTimetable.toArray(); // Yjs配列を通常のJS配列に変換
+      listElement.innerHTML = '';
+      const data = yTimetable.toArray();
 
-      // 開始時間（ここでは仮に13:00スタートとする）
       let currentStartTime = new Date();
       currentStartTime.setHours(13, 0, 0, 0);
 
       data.forEach((item, index) => {
         const li = document.createElement('li');
         
-        // 色分け（バンドか転換か）
+        // 色分けの適用
         if (item.type === 'setup') li.classList.add('type-setup');
+        if (item.type === 'break') li.classList.add('type-break');
 
-        // ドラッグ＆ドロップ用の設定
         li.draggable = true;
-        li.dataset.index = index; // 何番目の要素か記憶させる
+        li.dataset.index = index;
 
-        // 終了時間の計算
         const durationMs = item.duration * 60 * 1000;
         const endTime = new Date(currentStartTime.getTime() + durationMs);
 
-        // 時刻のフォーマット (HH:MM)
         const formatTime = (date) => `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
         const timeText = `${formatTime(currentStartTime)}`;
 
@@ -137,86 +135,84 @@
           <button class="delete-btn" data-index="${index}">削除</button>
         `;
 
-        // ドラッグイベントの登録
         addDragAndDropHandlers(li);
-
         listElement.appendChild(li);
 
-        // 次のバンドの開始時間を更新
         currentStartTime = endTime;
       });
 
-      // 削除ボタンのイベントを一括登録
       document.querySelectorAll('.delete-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const index = parseInt(e.target.dataset.index, 10);
-          deleteItem(index);
+          if (confirm('本当に削除しますか？')) {
+            yTimetable.delete(index, 1);
+          }
         });
       });
     }
 
-    // ==========================================
-    // 3. データ操作関数 (操作すると自動で共有される)
-    // ==========================================
+    // 3. データ追加処理
+    function handleAddItem(type) {
+      const nameInput = document.getElementById('inputName');
+      const durationInput = document.getElementById('inputDuration');
+      
+      let name = nameInput.value.trim();
+      let duration = parseInt(durationInput.value, 10);
 
-    // [追加] ボタンが押されたとき
-    document.getElementById('addBtn').addEventListener('click', () => {
-      const type = document.getElementById('inputType').value;
-      const name = document.getElementById('inputName').value;
-      const duration = parseInt(document.getElementById('inputDuration').value, 10);
-
-      if (!name || isNaN(duration)) {
-        alert("名前と分数を正しく入力してください");
+      if (isNaN(duration)) {
+        alert("分数を正しく入力してください");
         return;
       }
 
-      // 普通の配列のpushではなく、Yjsの配列にpushする（配列で囲む点に注意）
+      // 名前が空欄の場合、ボタンの種類に合わせて自動入力
+      if (!name) {
+        if (type === 'setup') name = '転換';
+        else if (type === 'break') name = '休憩';
+        else name = '名称未設定バンド';
+      }
+
       yTimetable.push([{ type, name, duration }]);
 
-      // 入力欄をクリア（赤い公園のコピーバンドなど、次を入力しやすくする）
-      document.getElementById('inputName').value = '';
-    });
-
-    // [削除] ボタンが押されたとき
-    function deleteItem(index) {
-      if (confirm('本当に削除しますか？')) {
-        yTimetable.delete(index, 1);
-      }
+      // 入力欄をリセット（連続入力しやすくする）
+      nameInput.value = '';
     }
 
-    // ==========================================
+    // 各ボタンにイベントを割り当て
+    document.getElementById('addBandBtn').addEventListener('click', () => handleAddItem('band'));
+    document.getElementById('addSetupBtn').addEventListener('click', () => {
+      // 転換ボタンを押した時、もし時間が20分のままなら10分に自動調整する（お好みで）
+      const durationInput = document.getElementById('inputDuration');
+      if(durationInput.value === "20") durationInput.value = "10";
+      handleAddItem('setup');
+    });
+    document.getElementById('addBreakBtn').addEventListener('click', () => handleAddItem('break'));
+
+
     // 4. ドラッグ＆ドロップの処理
-    // ==========================================
     let dragStartIndex = null;
 
     function addDragAndDropHandlers(item) {
-      // ドラッグ開始
       item.addEventListener('dragstart', (e) => {
         dragStartIndex = parseInt(item.dataset.index, 10);
         e.dataTransfer.effectAllowed = 'move';
-        // ドラッグ中の見た目を少し半透明にする
         setTimeout(() => item.style.opacity = '0.5', 0);
       });
 
-      // ドラッグ終了
       item.addEventListener('dragend', () => {
         item.style.opacity = '1';
         document.querySelectorAll('li').forEach(el => el.classList.remove('drag-over'));
       });
 
-      // 重なったとき（ドロップを許可する）
       item.addEventListener('dragover', (e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         item.classList.add('drag-over');
       });
 
-      // 離れたとき（ハイライトを消す）
       item.addEventListener('dragleave', () => {
         item.classList.remove('drag-over');
       });
 
-      // ドロップしたとき（Yjsのデータを入れ替える）
       item.addEventListener('drop', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -230,16 +226,11 @@
       });
     }
 
-    // Yjsデータを並び替える関数
     function moveItem(fromIndex, toIndex) {
-      // 途中で他のユーザーの通信が割り込まないように transact で包む
       ydoc.transact(() => {
         const itemToMove = yTimetable.get(fromIndex);
-        
-        // 元の場所から削除
         yTimetable.delete(fromIndex, 1);
         
-        // 削除によってインデックスがズレるのを補正して挿入
         let insertIndex = toIndex;
         if (fromIndex < toIndex) {
           insertIndex -= 1; 
