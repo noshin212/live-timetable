@@ -94,7 +94,7 @@
 
     // 3. サーバーへのWebSocket接続
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.host}/ws/${roomId}`;
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
     const provider = new WebsocketProvider(wsUrl, roomId, ydoc);
 
     provider.on('status', event => {
