@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -6,6 +6,7 @@ import json
 import os
 import string
 import random
+from typing import Dict, List
 
 app = FastAPI()
 
@@ -34,6 +35,34 @@ def generate_short_id():
 class TimeTableData(BaseModel):
     data: dict
 
+# ==========================================
+# WebSocketの接続を管理するクラス
+# ==========================================
+class ConnectionManager:
+    def __init__(self):
+        self.active_conections: Dict[str, List[WebSocket]] = {}
+
+    async def connect(self, websocket: WebSocket, room_id:str):
+        await websocket.accept()
+        if room_id not in self.active_connections:
+            self.active_conections[room_id] = []
+        self.active_conections[room_id].append(websocket)
+    
+    def disconnect(self, websocket: WebSocket, room_id: str):
+        if room_id in self.active_conections:
+            self.active_conections[room_id].remove(websocket)
+            
+            if not self.active_conections[room_id]:
+                del self.active_conections[room_id]
+
+    async def broadcast(self, message: bytes, room_id: str, sender: WebSocket):
+        if room_id in self.active_conections:
+            for connection in self.active_conections[room_id]:
+                if connection != sender:
+                    await connection.send_bytes(message)
+    
+manager = ConnectionManager()
+
 @app.get("/")
 def read_root():
     return FileResponse("index.html")
@@ -53,3 +82,18 @@ def get_timetable(short_id: str):
     if short_id in db:
         return {"success": True, "data": db[short_id]}
     return {"success": False, "error": "Not found"}
+
+# ==========================================
+# WebSocketのエンドポイント
+# ==========================================
+
+@app.websocket("/ws/{short_id}")
+async def websocket_endpoint(websocket: WebSocket, short_id: str):
+    await manager.connect(websocket, short_id)
+    try:
+        while True:
+            data = await websocket.receive_bytes()
+            await manager.broadcast(data, short_id, websocket)
+    
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, short_id)
