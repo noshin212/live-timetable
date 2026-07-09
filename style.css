@@ -1,0 +1,104 @@
+body {
+  font-family: sans-serif;
+  max-width: 650px;
+  margin: auto;
+  padding: 0 20px 30px;
+  background: #fff;
+}
+
+.sticky-header-area {
+  position: sticky;
+  top: 0;
+  background-color: #fff;
+  z-index: 100;
+  padding-top: 20px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid #ddd;
+  margin-bottom: 20px;
+}
+
+.header-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+h2 { margin: 0; }
+
+.btn-group { display: flex; gap: 5px; flex-wrap: wrap; }
+.btn {
+  border: none; border-radius: 4px; padding: 8px 12px;
+  font-weight: bold; color: white; cursor: pointer;
+}
+.share-btn { background: #3498db; }
+.img-btn { background: #2ecc71; }
+.excel-btn { background: #27ae60; }
+.reset-btn { background: #e74c3c; }
+
+.tab-container {
+  display: flex; border-bottom: 2px solid #3498db;
+  margin-bottom: 15px; overflow-x: auto; gap: 3px;
+}
+.tab {
+  padding: 8px 16px; background: #ecf0f1; border-radius: 6px 6px 0 0;
+  cursor: pointer; font-weight: bold; color: #7f8c8d;
+  white-space: nowrap; transition: 0.2s;
+}
+.tab:hover { background: #bdc3c7; }
+.tab.active { background: #3498db; color: #fff; }
+.tab-add {
+  padding: 8px 16px; cursor: pointer; color: #3498db;
+  font-weight: bold; border-radius: 6px 6px 0 0;
+  background: transparent; white-space: nowrap;
+}
+.tab-add:hover { background: #ecf0f1; }
+
+.controls { background: #f4f4f4; padding: 15px; border-radius: 8px; }
+
+.item {
+  padding: 10px; margin: 5px 0; background: #fff;
+  border: 1px solid #ddd; border-left: 5px solid #3498db;
+  cursor: grab; display: flex; justify-content: space-between;
+  align-items: center; transition: 0.2s;
+}
+.item.setup { border-left-color: #f1c40f; background: #fffcf0; }
+.item.break { border-left-color: #e74c3c; background: #fff0f0; }
+.item.selected {
+  border-color: #2ecc71; box-shadow: 0 0 8px rgba(46, 204, 113, 0.5);
+  transform: scale(1.02); z-index: 10; position: relative;
+}
+
+.hide-on-export { display: inline-block; }
+.exporting .hide-on-export { display: none !important; }
+
+button { cursor: pointer; padding: 5px 10px; margin-left: 5px; }
+.item-main { flex-grow: 1; display: flex; align-items: center; margin-left: 15px; }
+.title { font-weight: bold; margin-right: 10px; min-width: 150px; }
+.duration-edit { width: 50px; padding: 3px; text-align: center; border: 1px solid #ccc; border-radius: 4px; }
+.time-display { font-family: monospace; font-size: 1.1em; min-width: 110px; }
+
+#capture-area { padding-bottom: 20px; background: #fff; }
+#status { text-align: center; font-size: 0.9rem; font-weight: bold; margin-bottom: 10px; color: #666; }
+
+/* モーダルウィンドウ用のデザイン */
+.modal-overlay {
+  display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+.modal-content {
+  background: #fff; padding: 25px; border-radius: 8px; width: 90%; max-width: 350px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15); text-align: center;
+}
+.modal-content h3 { margin-top: 0; margin-bottom: 15px; color: #333; font-size: 1.2rem; }
+.modal-input {
+  width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #ccc;
+  border-radius: 4px; box-sizing: border-box; font-size: 1rem;
+}
+.modal-input:focus { outline: none; border-color: #3498db; box-shadow: 0 0 5px rgba(52, 152, 219, 0.3); }
+.modal-actions { display: flex; justify-content: space-between; gap: 10px; }
+.modal-actions .btn { flex: 1; padding: 10px; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

@@ -71,6 +71,10 @@ def read_root():
 async def get_main_js():
     return FileResponse("main.js")
 
+@app.get("/style.css")
+async def get_style_css():
+    return FileResponse("style.css")
+
 @app.post("/save")
 def save_timetable(tt: TimeTableData):
     db = load_db()

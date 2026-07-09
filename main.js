@@ -116,18 +116,34 @@ window.switchTab = function(tabId) {
   renderList();
 };
 
+// ① モーダルを開く処理
 window.addTab = function() {
-  console.log("✅ 追加ボタンがクリックされました！"); // 動作確認用のログ
-
-  // ★ 既存の配列の「コピー」を作ってから操作する（Yjsに変化を気づかせるため）
-  const tabs = [...(yMetadata.get('tabs') || [])];
+  const tabs = yMetadata.get('tabs') || [];
+  const input = document.getElementById('newTabNameInput');
+  input.value = `${tabs.length + 1}日目`; 
   
-  const newName = prompt('新しい日程の名前を入力してください', `${tabs.length + 1}日目`);
+  const modal = document.getElementById('tabModalOverlay');
+  modal.style.display = 'flex'; 
+  input.focus(); 
+};
+
+// ② モーダルを閉じる処理
+window.closeAddTabModal = function() {
+  document.getElementById('tabModalOverlay').style.display = 'none';
+};
+
+// ③ 追加ボタンが押された時の処理
+window.confirmAddTab = function() {
+  const input = document.getElementById('newTabNameInput');
+  const newName = input.value.trim();
+  
   if (!newName) {
-    console.log("キャンセルされました");
+    alert('日程の名前を入力してください');
+    input.focus();
     return;
   }
 
+  const tabs = [...(yMetadata.get('tabs') || [])];
   const newId = 'day' + Date.now(); 
   tabs.push({ id: newId, name: newName });
   
@@ -137,6 +153,7 @@ window.addTab = function() {
   });
 
   window.switchTab(newId);
+  window.closeAddTabModal();
 };
 
 document.getElementById('startTime').addEventListener('change', (e) => {
