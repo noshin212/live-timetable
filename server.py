@@ -67,6 +67,10 @@ manager = ConnectionManager()
 def read_root():
     return FileResponse("index.html")
 
+@app.get("/main.js")
+async def get_main_js():
+    return FileResponse("main.js")
+
 @app.post("/save")
 def save_timetable(tt: TimeTableData):
     db = load_db()
