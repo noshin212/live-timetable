@@ -6,6 +6,7 @@
   
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
   
   <style>
     body { font-family: sans-serif; max-width: 650px; margin: auto; padding: 0 20px 30px; background: #fff; }
@@ -18,6 +19,20 @@
     .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px; }
     h2 { margin: 0; }
     
+    .btn-group { display: flex; gap: 5px; flex-wrap: wrap; }
+    .btn { border: none; border-radius: 4px; padding: 8px 12px; font-weight: bold; color: white; cursor: pointer; }
+    .share-btn { background: #3498db; }
+    .img-btn { background: #2ecc71; }
+    .excel-btn { background: #27ae60; }
+    .reset-btn { background: #e74c3c; }
+
+    .tab-container { display: flex; border-bottom: 2px solid #3498db; margin-bottom: 15px; overflow-x: auto; gap: 3px; }
+    .tab { padding: 8px 16px; background: #ecf0f1; border-radius: 6px 6px 0 0; cursor: pointer; font-weight: bold; color: #7f8c8d; white-space: nowrap; transition: 0.2s;}
+    .tab:hover { background: #bdc3c7; }
+    .tab.active { background: #3498db; color: #fff; }
+    .tab-add { padding: 8px 16px; cursor: pointer; color: #3498db; font-weight: bold; border-radius: 6px 6px 0 0; background: transparent; white-space: nowrap; }
+    .tab-add:hover { background: #ecf0f1; }
+    
     .controls { background: #f4f4f4; padding: 15px; border-radius: 8px; }
     
     .item { padding: 10px; margin: 5px 0; background: #fff; border: 1px solid #ddd; border-left: 5px solid #3498db; cursor: grab; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; }
@@ -25,7 +40,6 @@
     .item.break { border-left-color: #e74c3c; background: #fff0f0; }
     .item.selected { border-color: #2ecc71; box-shadow: 0 0 8px rgba(46, 204, 113, 0.5); transform: scale(1.02); z-index: 10; position: relative; }
     
-    /* 画像出力時に不要なボタンを消すためのクラス */
     .hide-on-export { display: inline-block; }
     .exporting .hide-on-export { display: none !important; }
     
@@ -35,14 +49,8 @@
     .duration-edit { width: 50px; padding: 3px; text-align: center; border: 1px solid #ccc; border-radius: 4px; }
     .time-display { font-family: monospace; font-size: 1.1em; min-width: 110px; }
     
-    .btn-group { display: flex; gap: 5px; flex-wrap: wrap; }
-    .btn { border: none; border-radius: 4px; padding: 8px 12px; font-weight: bold; color: white; }
-    .share-btn { background: #3498db; }
-    .img-btn { background: #2ecc71; }
-    .reset-btn { background: #e74c3c; }
-    
-    /* キャプチャ用のラッパー領域 */
     #capture-area { padding-bottom: 20px; background: #fff; }
+    #status { text-align: center; font-size: 0.9rem; font-weight: bold; margin-bottom: 10px; color: #666; }
   </style>
 </head>
 <body>
@@ -51,13 +59,16 @@
     <div class="header-flex">
       <h2>ライブ進行表</h2>
       <div class="btn-group">
-        <button class="btn img-btn" onclick="window.downloadAsImage()">📷 画像として保存</button>
-        <button class="btn share-btn" onclick="window.generateShareLink()">🔗 共有URLを発行</button>
+        <button class="btn img-btn" onclick="window.downloadAsImage()">📷 画像</button>
+        <button class="btn excel-btn" onclick="window.downloadAsExcel()">📊 Excel</button>
+        <button class="btn share-btn" onclick="window.generateShareLink()">🔗 共有URL</button>
         <button class="btn reset-btn" onclick="window.clearData()">リセット</button>
       </div>
     </div>
+    
+    <div id="status">接続状態を確認中...</div>
 
-    <div id="status" style="text-align: center; font-size: 0.9rem; font-weight: bold; margin-bottom: 15px; color: #666;">接続状態を確認中...</div>
+    <div class="tab-container" id="tabContainer"></div>
     
     <div class="controls">
       <label>開始時間: <input type="time" id="startTime" value="13:00"></label>
@@ -75,221 +86,6 @@
     <div id="timetable"></div>
   </div>
 
-  <!-- ★ここからYjs対応のスクリプト（モジュールとして読み込み） -->
-  <script type="module">
-    import * as Y from 'https://esm.sh/yjs@13';
-    import { WebsocketProvider } from 'https://esm.sh/y-websocket@1.5';
-
-    // 1. URLから部屋IDを取得、なければ新規作成してURLに付与
-    let roomId = new URLSearchParams(window.location.search).get('id');
-    if (!roomId) {
-      roomId = Math.random().toString(36).substring(2, 9);
-      window.history.replaceState(null, '', '?id=' + roomId);
-    }
-
-    // 2. Yjsの初期化（タイムテーブル配列と、開始時間などのメタデータ）
-    const ydoc = new Y.Doc();
-    const yTimetable = ydoc.getArray('timetable');
-    const yMetadata = ydoc.getMap('metadata');
-
-    // 3. サーバーへのWebSocket接続
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
-    const provider = new WebsocketProvider(wsUrl, roomId, ydoc);
-
-    provider.on('status', event => {
-      const statusEl = document.getElementById('status');
-      if (statusEl) {
-        if (event.status === 'connected'){
-          statusEl.textContent = `🟢 リアルタイム同期中 (ルームID: ${roomId})`;
-          statusEl.style.color = '#2ecc71';
-        } else{
-          statusEl.textContent = '🔴 接続が切れました。再接続中...';
-          statusEl.style.color = '#e74c3c';
-        }
-      }
-    })
-
-    // DOM要素の取得
-    const timetableElement = document.getElementById('timetable');
-    const startTimeInput = document.getElementById('startTime');
-    const bandNameInput = document.getElementById('bandName');
-    const durationInput = document.getElementById('duration');
-
-    let selectedIndex = null; // ⇄ボタン用の選択状態管理
-
-    // ---------------------------------------------------
-    // データ監視と画面の自動描画 (Observer)
-    // ---------------------------------------------------
-    
-    // 開始時間が変更されたら描画し直す
-    yMetadata.observe(() => {
-      const time = yMetadata.get('startTime') || '13:00';
-      if (startTimeInput.value !== time) {
-        startTimeInput.value = time;
-      }
-      renderList();
-    });
-
-    // タイムテーブルの中身が変更されたら描画し直す
-    yTimetable.observe(() => {
-      if (selectedIndex !== null && selectedIndex >= yTimetable.length) {
-        selectedIndex = null; // 削除等でインデックスが溢れた場合はリセット
-      }
-      renderList();
-    });
-
-    // ---------------------------------------------------
-    // SortableJS (ドラッグ＆ドロップ) の設定
-    // ---------------------------------------------------
-    new Sortable(timetableElement, {
-      animation: 150,
-      onEnd: function (evt) {
-        if (evt.oldIndex === evt.newIndex) return;
-        // Yjsのデータを入れ替える
-        ydoc.transact(() => {
-          const item = yTimetable.get(evt.oldIndex);
-          yTimetable.delete(evt.oldIndex, 1);
-          yTimetable.insert(evt.newIndex, [item]);
-        });
-      }
-    });
-
-    // ---------------------------------------------------
-    // HTMLの描画関数
-    // ---------------------------------------------------
-    function renderList() {
-      timetableElement.innerHTML = '';
-      const data = yTimetable.toArray();
-
-      let startTimeStr = yMetadata.get('startTime') || '13:00';
-      let [hours, minutes] = startTimeStr.split(':').map(Number);
-      let currentTime = new Date(2000, 0, 1, hours, minutes);
-
-      data.forEach((item, index) => {
-        // 時間の計算
-        const start = currentTime.toTimeString().slice(0, 5);
-        const duration = parseInt(item.duration) || 0;
-        currentTime.setMinutes(currentTime.getMinutes() + duration);
-        const end = currentTime.toTimeString().slice(0, 5);
-
-        // DOMの生成
-        const div = document.createElement('div');
-        div.className = `item ${item.type}`;
-        if (selectedIndex === index) div.classList.add('selected');
-        
-        div.dataset.index = index;
-        div.dataset.duration = duration;
-
-        div.innerHTML = `
-          <span class="time-display">${start} 〜 ${end}</span>
-          <div class="item-main">
-            <span class="title">${item.name}</span>
-            <input type="number" class="duration-edit hide-on-export" value="${duration}" min="1" onchange="window.updateDuration(this)">
-            <span class="hide-on-export">分</span>
-          </div>
-          <div class="hide-on-export">
-            <button class="swap-btn" onclick="window.toggleSelect(${index})">⇄</button>
-            <button onclick="window.removeItem(${index})">✖</button>
-          </div>
-        `;
-        timetableElement.appendChild(div);
-      });
-    }
-
-    // ---------------------------------------------------
-    // HTMLから呼び出される操作関数 (windowに紐付け)
-    // ---------------------------------------------------
-
-    // 開始時間入力欄の変更
-    startTimeInput.addEventListener('change', (e) => {
-      yMetadata.set('startTime', e.target.value);
-    });
-
-    // アイテム追加
-    window.addItemFromInput = function(type) {
-      let name = type === 'setup' ? '転換（セッティング）' : type === 'break' ? '休憩' : (bandNameInput.value || '名称未設定');
-      let duration = type === 'setup' ? 10 : type === 'break' ? (parseInt(durationInput.value) || 15) : (parseInt(durationInput.value) || 20);
-
-      yTimetable.push([{ type, name, duration }]);
-      
-      if (type === 'band') bandNameInput.value = ''; 
-    };
-
-    // 時間変更
-    window.updateDuration = function(inputElement) {
-      const index = parseInt(inputElement.closest('.item').dataset.index);
-      let newDuration = parseInt(inputElement.value);
-      if (isNaN(newDuration) || newDuration < 0) newDuration = 0;
-
-      // 該当インデックスのオブジェクトをごっそり入れ替える
-      ydoc.transact(() => {
-        const item = yTimetable.get(index);
-        yTimetable.delete(index, 1);
-        yTimetable.insert(index, [{ ...item, duration: newDuration }]);
-      });
-    };
-
-    // 選択と交換 (⇄)
-    window.toggleSelect = function(index) {
-      if (selectedIndex === index) {
-        selectedIndex = null;
-      } else if (selectedIndex === null) {
-        selectedIndex = index;
-      } else {
-        // Swap実行
-        ydoc.transact(() => {
-          const arr = yTimetable.toArray();
-          const temp = arr[selectedIndex];
-          arr[selectedIndex] = arr[index];
-          arr[index] = temp;
-          // 一気に中身を入れ替える
-          yTimetable.delete(0, yTimetable.length);
-          yTimetable.insert(0, arr);
-        });
-        selectedIndex = null;
-      }
-      renderList(); // 選択状態の枠線などを反映するために手動描画
-    };
-
-    // 削除
-    window.removeItem = function(index) {
-      yTimetable.delete(index, 1);
-      if (selectedIndex === index) selectedIndex = null;
-    };
-
-    // 全データクリア
-    window.clearData = function() {
-      if (confirm('初期化しますか？')) {
-        ydoc.transact(() => {
-          yTimetable.delete(0, yTimetable.length);
-          yMetadata.set('startTime', '13:00');
-        });
-      }
-    };
-
-    // 共有URL発行（サーバーを介さず、現在の部屋のURLをそのまま共有）
-    window.generateShareLink = function() {
-      window.prompt('【スタッフ共有用】以下のURLをLINEで共有してください：', window.location.href);
-    };
-
-    // 画像として保存 (html2canvas)
-    window.downloadAsImage = function() {
-      const captureArea = document.getElementById('capture-area');
-      captureArea.classList.add('exporting');
-      
-      html2canvas(captureArea, {
-        backgroundColor: '#ffffff',
-        scale: 2
-      }).then(canvas => {
-        captureArea.classList.remove('exporting');
-        const link = document.createElement('a');
-        link.download = 'timetable.png';
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-      });
-    };
-
-  </script>
+  <script type="module" src="./main.js"></script>
 </body>
 </html>
